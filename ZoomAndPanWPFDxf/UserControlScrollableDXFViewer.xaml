@@ -11,8 +11,8 @@
         <ScrollViewer
         x:Name="scroller"
         CanContentScroll="True"
-        VerticalScrollBarVisibility="Visible"
-        HorizontalScrollBarVisibility="Visible"
+        VerticalScrollBarVisibility="Hidden"
+        HorizontalScrollBarVisibility="Hidden"
         >
 
             <ZoomAndPan:ZoomAndPanControl                

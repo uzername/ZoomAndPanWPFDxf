@@ -29,6 +29,7 @@ namespace ZoomAndPanWPFDxf
         }
         private DxfBoundingBox currentBBox;
         private DxfFile dxfFile = null;
+        double usedScale = 1;
 
         public void processDxfFile(String inFilePath)
         {
@@ -69,18 +70,38 @@ namespace ZoomAndPanWPFDxf
             double bboxHeightPrimal = Math.Abs(boundBox[1] - boundBox[3]);
             double scaleX = currentWidthMain / bboxWidthPrimal;
             double scaleY = currentHeightMain / bboxHeightPrimal;
-            double usedScale = scaleX < scaleY ? scaleX : scaleY;
+            usedScale = scaleX < scaleY ? scaleX : scaleY;
+            // adjust basic dimensions of canvas
             this.renderBaseDXF.Width = bboxWidthPrimal * usedScale;
             this.renderBaseDXF.Height = bboxHeightPrimal * usedScale;
+            double usedScaleW = usedScale; double usedScaleH = usedScale;
+            if (isMirrored)
+            {
+                usedScaleW *= -1;
+            }
+            double graphPlaneCenterX = this.renderBaseDXF.Width / 2;
+            double graphPlaneCenterY = this.renderBaseDXF.Height / 2;
             // now - conjure proper transformation sequence
-            // first - assign center to zero
+            // first - move center to zero
+            TranslateTransform translocateOperationCenterStart = new TranslateTransform(-(boundBox[2] - boundBox[0]) /2, -(boundBox[3] - boundBox[1]) /2);
             // then - scale relatively to zero
+            ScaleTransform scaleOperation = new ScaleTransform(usedScaleW, usedScaleH, 0, 0);
+            // also - rotate
+
             // next - move to center of screen
+            TranslateTransform translocateOperationCenter = new TranslateTransform(graphPlaneCenterX, graphPlaneCenterY);
+
+            TransformGroup groupOperation = new TransformGroup();
+            groupOperation.Children.Add(translocateOperationCenterStart);
+            groupOperation.Children.Add(scaleOperation);
+            groupOperation.Children.Add(translocateOperationCenter);
 
             foreach (DxfEntity entity in dxfFile.Entities)
             {
                 DxfColor entityColor = entity.Color;
-
+                int rgb = entityColor.ToRGB();
+                SolidColorBrush usedColor = new SolidColorBrush(Color.FromRgb((byte)((rgb >> 16) & 0xff), (byte)((rgb >> 8) & 0xff), (byte)((rgb >> 0) & 0xff)));
+                
                 switch (entity.EntityType)
                 {
                     case DxfEntityType.Line:
@@ -92,28 +113,31 @@ namespace ZoomAndPanWPFDxf
                             lineGraphic.Y1 = lineDxf.P1.Y;
                             lineGraphic.X2 = lineDxf.P2.X;
                             lineGraphic.Y2 = lineDxf.P2.Y;
-                            lineGraphic.Stroke = Brushes.Black;                            
+
+                            lineGraphic.Stroke = Brushes.Black;
+                            lineGraphic.StrokeThickness = 1 / usedScale;
+                            lineGraphic.RenderTransform = groupOperation;
                             this.renderBaseDXF.Children.Add(lineGraphic);
                             break;
                         }
                     case DxfEntityType.Arc:
                         {
-                            /*
+                            
                             DxfArc arcDxf = (DxfArc)entity;
                             // arc in dxf is counterclockwise
                             Arc arcGraphic = new Arc();
                             double correctedXCenter = arcDxf.Center.X;
                             double correctedYCenter = arcDxf.Center.Y;
                             // ayyy lmao that's a meme but it works. I have no idea why it worked, but it... uhh, it will backfire at some case
-                            arcGraphic.StartAngle = UserControlDXFviewer.ConvertToRadians((arcDxf.EndAngle));
-                            arcGraphic.EndAngle = UserControlDXFviewer.ConvertToRadians((arcDxf.StartAngle));
+                            arcGraphic.StartAngle = UserControlScrollableDXFViewer.ConvertToRadians((arcDxf.EndAngle));
+                            arcGraphic.EndAngle = UserControlScrollableDXFViewer.ConvertToRadians((arcDxf.StartAngle));
                             arcGraphic.Radius = arcDxf.Radius;
                             arcGraphic.Center = new Point(correctedXCenter, correctedYCenter);
                             arcGraphic.Stroke = Brushes.Black;
                             arcGraphic.StrokeThickness = 1 / usedScale;
                             arcGraphic.RenderTransform = groupOperation;
                             this.renderBaseDXF.Children.Add(arcGraphic);
-                            */
+                            
                             break;
                         }
                 }
@@ -159,7 +183,7 @@ namespace ZoomAndPanWPFDxf
 
             mouseButtonDown = e.ChangedButton;
             origZoomAndPanControlMouseDownPoint = e.GetPosition(zoomAndPanControl);
-            origContentMouseDownPoint = e.GetPosition(renderBaseDXF);
+            origContentMouseDownPoint = e.GetPosition(zoomAndPanControl); //was renderBaseDXF
 
             if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0 &&
                 (e.ChangedButton == MouseButton.Left ||
@@ -220,11 +244,11 @@ namespace ZoomAndPanWPFDxf
                 // The user is left-dragging the mouse.
                 // Pan the viewport by the appropriate amount.
                 //
-                Point curContentMousePoint = e.GetPosition(renderBaseDXF);
-                Vector dragOffset = curContentMousePoint - origContentMouseDownPoint;
+                Point curContentMousePoint = e.GetPosition(zoomAndPanControl); // was renderBaseDXF
+                Vector dragOffset = (curContentMousePoint - origContentMouseDownPoint)*(1/ this.zoomAndPanControl.ContentScale);
 
                 zoomAndPanControl.ContentOffsetX -= dragOffset.X;
-                zoomAndPanControl.ContentOffsetY -= dragOffset.Y;
+                zoomAndPanControl.ContentOffsetY -= dragOffset.Y/2;
 
                 e.Handled = true;
             }
@@ -257,7 +281,7 @@ namespace ZoomAndPanWPFDxf
             {
                 if (itemChild is System.Windows.Shapes.Shape)
                 {
-                    (itemChild as System.Windows.Shapes.Shape).StrokeThickness = 1 / this.zoomAndPanControl.ContentScale;
+                    (itemChild as System.Windows.Shapes.Shape).StrokeThickness = 1 / this.zoomAndPanControl.ContentScale * 1/usedScale;
                 }
             }
 
@@ -270,7 +294,7 @@ namespace ZoomAndPanWPFDxf
             {
                 if (itemChild is System.Windows.Shapes.Shape)
                 {
-                    (itemChild as System.Windows.Shapes.Shape).StrokeThickness = 1 / this.zoomAndPanControl.ContentScale;
+                    (itemChild as System.Windows.Shapes.Shape).StrokeThickness = 1 / this.zoomAndPanControl.ContentScale * 1/usedScale;
                 }
             }
         }

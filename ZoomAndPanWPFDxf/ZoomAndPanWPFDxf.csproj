@@ -64,6 +64,7 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="Arc.cs" />
     <Compile Include="UserControlScrollableDXFViewer.xaml.cs">
       <DependentUpon>UserControlScrollableDXFViewer.xaml</DependentUpon>
     </Compile>
