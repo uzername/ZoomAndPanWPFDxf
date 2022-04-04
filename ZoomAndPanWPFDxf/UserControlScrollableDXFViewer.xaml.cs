@@ -40,6 +40,233 @@ namespace ZoomAndPanWPFDxf
 
         /// <summary>
         /// returns bounding box of DXF file: [minX,minY, maxX,maxY]
+        /// with rotation applied
+        /// </summary>
+        /// <param name="inAngle">rotation angle in degrees</param>
+        /// <returns></returns>
+        public List<Double> getActiveBoundBoxValuesWithRotation(double inAngle)
+        {
+            List<Double> boundBox = getActiveBoundBoxValues();
+            double assumedRotationCenterX = (boundBox[0] + boundBox[2]) / 2;
+            double assumedRotationCenterY = (boundBox[1] + boundBox[3]) / 2;
+            if ((inAngle == 0) || (inAngle == 360))
+            {
+                return boundBox;
+            }
+            else
+            {
+                // rotation matrix is counter clockwise?
+                Matrix rotationMatrix = new Matrix();
+                rotationMatrix.SetIdentity();
+                rotationMatrix.RotateAt(inAngle, assumedRotationCenterX, assumedRotationCenterY);
+                boundBox[0] = Double.NaN; boundBox[1] = Double.NaN;
+                boundBox[2] = Double.NaN; boundBox[3] = Double.NaN;
+                foreach (var itemEntity in dxfFile.Entities)
+                {
+                    switch (itemEntity.EntityType)
+                    {
+                        case DxfEntityType.Line:
+                            {
+                                // calculate bound box for rotated line
+                                Point P1Line = new Point((itemEntity as DxfLine).P1.X, (itemEntity as DxfLine).P1.Y);
+                                Point P2Line = new Point((itemEntity as DxfLine).P2.X, (itemEntity as DxfLine).P2.Y);
+                                Point P1LineRotated = rotationMatrix.Transform(P1Line);
+                                Point P2LineRotated = rotationMatrix.Transform(P2Line);
+                                if (Double.IsNaN(boundBox[0]) && Double.IsNaN(boundBox[1]) && Double.IsNaN(boundBox[2]) && Double.IsNaN(boundBox[3]))
+                                {
+                                    if (P1LineRotated.X < P2LineRotated.X)
+                                    {
+                                        boundBox[0] = P1LineRotated.X;
+                                        boundBox[2] = P2LineRotated.X;
+                                    }
+                                    else
+                                    {
+                                        boundBox[2] = P1LineRotated.X;
+                                        boundBox[0] = P2LineRotated.X;
+                                    }
+                                    if (P1LineRotated.Y < P2LineRotated.Y)
+                                    {
+                                        boundBox[1] = P1LineRotated.Y;
+                                        boundBox[3] = P2LineRotated.Y;
+                                    }
+                                    else
+                                    {
+                                        boundBox[3] = P1LineRotated.Y;
+                                        boundBox[1] = P2LineRotated.Y;
+                                    }
+                                }
+                                else
+                                {
+                                    if (P1LineRotated.X < boundBox[0])
+                                    {
+                                        boundBox[0] = P1LineRotated.X;
+                                    }
+                                    if (P1LineRotated.X > boundBox[2])
+                                    {
+                                        boundBox[2] = P1LineRotated.X;
+                                    }
+                                    if (P1LineRotated.Y < boundBox[1])
+                                    {
+                                        boundBox[1] = P1LineRotated.Y;
+                                    }
+                                    if (P1LineRotated.Y > boundBox[3])
+                                    {
+                                        boundBox[3] = P1LineRotated.Y;
+                                    }
+                                    // ===============================
+                                    if (P2LineRotated.X < boundBox[0])
+                                    {
+                                        boundBox[0] = P2LineRotated.X;
+                                    }
+                                    if (P2LineRotated.X > boundBox[2])
+                                    {
+                                        boundBox[2] = P2LineRotated.X;
+                                    }
+                                    if (P2LineRotated.Y < boundBox[1])
+                                    {
+                                        boundBox[1] = P2LineRotated.Y;
+                                    }
+                                    if (P2LineRotated.Y > boundBox[3])
+                                    {
+                                        boundBox[3] = P2LineRotated.Y;
+                                    }
+
+                                }
+                                break;
+                            }
+                        case DxfEntityType.Arc:
+                            {
+                                double findNearestStraightAngle(double inAngle2)
+                                {
+                                    double retVal = 0;
+                                    if ((inAngle2 >= 0) && (inAngle2 < 90))
+                                    {
+                                        retVal = 90;
+                                    }
+                                    else if ((inAngle2 >= 90) && (inAngle2 < 180))
+                                    {
+                                        retVal = 180;
+                                    }
+                                    else if ((inAngle2 >= 180) && (inAngle2 < 270))
+                                    {
+                                        retVal = 270;
+                                    }
+                                    else if ((inAngle2 >= 270) && (inAngle2 < 360))
+                                    {
+                                        retVal = 360;
+                                    }
+                                    else if ((inAngle2 >= 360) && (inAngle2 < 450))
+                                    {
+                                        retVal = 450;
+                                    }
+                                    else if ((inAngle2 >= 450) && (inAngle2 < 540))
+                                    {
+                                        retVal = 540;
+                                    }
+                                    else if ((inAngle2 >= 540) && (inAngle2 < 630))
+                                    {
+                                        retVal = 630;
+                                    }
+                                    else if ((inAngle2 >= 630) && (inAngle2 < 720))
+                                    {
+                                        retVal = 720;
+                                    }
+                                    return retVal;
+                                }
+                                double centerX = (itemEntity as DxfArc).Center.X;
+                                double centerY = (itemEntity as DxfArc).Center.Y;
+                                // rotate center of Arc
+                                Point centerNew = rotationMatrix.Transform(new Point(centerX, centerY));
+                                double radiusArc = (itemEntity as DxfArc).Radius;
+                                // angle(s) of arc is kept during rotation, center may move, together with start and end points
+                                // regarding angles. They are measured relatively to horizontal direction, so they may be ... 
+                                // new angle = old angle+rotation angle
+                                // I checked this in QCAD, it should work. Geometrically it makes sense
+                                // ALSO. in DXF arc is rotated counterclockwise
+                                double newStartAngle = ((itemEntity as DxfArc).StartAngle + inAngle) % 360;
+                                double newEndAngle = ((itemEntity as DxfArc).EndAngle + inAngle) % 360;
+                                if (newEndAngle < newStartAngle)
+                                {
+                                    // arc may be intersecting zero horizontal
+                                    newEndAngle += 360;
+                                }
+                                List<Point> valuablePoints = new List<Point>();
+                                Point startPoint = new Point();
+                                startPoint.X = centerNew.X + Math.Cos(ConvertToRadians(newStartAngle)) * radiusArc;
+                                startPoint.Y = centerNew.Y + Math.Sin(ConvertToRadians(newStartAngle)) * radiusArc;
+                                valuablePoints.Add(startPoint);
+                                double iteratorAngle = findNearestStraightAngle(newStartAngle);
+                                while (iteratorAngle < newEndAngle)
+                                {
+                                    Point valuablePoint = new Point();
+                                    valuablePoint.X = centerNew.X + Math.Cos(ConvertToRadians(iteratorAngle)) * radiusArc;
+                                    valuablePoint.Y = centerNew.Y + Math.Sin(ConvertToRadians(iteratorAngle)) * radiusArc;
+                                    valuablePoints.Add(valuablePoint);
+                                    iteratorAngle += 90;
+                                }
+                                Point endPoint = new Point();
+                                endPoint.X = centerNew.X + Math.Cos(ConvertToRadians(newEndAngle)) * radiusArc;
+                                endPoint.Y = centerNew.Y + Math.Sin(ConvertToRadians(newEndAngle)) * radiusArc;
+                                valuablePoints.Add(endPoint);
+                                // now, let's get the ACTUAL bound box of transformed arc
+                                List<Double> currentBBoxArc = new List<double>(new double[] { Double.NaN, Double.NaN, Double.NaN, Double.NaN });
+                                foreach (var valuablePointArc in valuablePoints)
+                                {
+                                    if (Double.IsNaN(currentBBoxArc[0]) || valuablePointArc.X < currentBBoxArc[0])
+                                    {
+                                        currentBBoxArc[0] = valuablePointArc.X;
+                                    }
+                                    if (Double.IsNaN(currentBBoxArc[1]) || valuablePointArc.Y < currentBBoxArc[1])
+                                    {
+                                        currentBBoxArc[1] = valuablePointArc.Y;
+                                    }
+                                    if (Double.IsNaN(currentBBoxArc[2]) || valuablePointArc.X > currentBBoxArc[2])
+                                    {
+                                        currentBBoxArc[2] = valuablePointArc.X;
+                                    }
+                                    if (Double.IsNaN(currentBBoxArc[3]) || valuablePointArc.Y > currentBBoxArc[3])
+                                    {
+                                        currentBBoxArc[3] = valuablePointArc.Y;
+                                    }
+                                }
+                                // now, merge arc bbox with general bbox
+                                if (Double.IsNaN(boundBox[0]) && Double.IsNaN(boundBox[1]) && Double.IsNaN(boundBox[2]) && Double.IsNaN(boundBox[3]))
+                                { //arc was first
+                                    boundBox[0] = currentBBoxArc[0];
+                                    boundBox[1] = currentBBoxArc[1];
+                                    boundBox[2] = currentBBoxArc[2];
+                                    boundBox[3] = currentBBoxArc[3];
+                                }
+                                else
+                                {
+                                    if (boundBox[0] > currentBBoxArc[0])
+                                    {
+                                        boundBox[0] = currentBBoxArc[0];
+                                    }
+                                    if (boundBox[1] > currentBBoxArc[1])
+                                    {
+                                        boundBox[1] = currentBBoxArc[1];
+                                    }
+                                    if (boundBox[2] < currentBBoxArc[2])
+                                    {
+                                        boundBox[2] = currentBBoxArc[2];
+                                    }
+                                    if (boundBox[3] < currentBBoxArc[3])
+                                    {
+                                        boundBox[3] = currentBBoxArc[3];
+                                    }
+                                }
+                                break;
+                            }
+                    }
+                }
+                return boundBox;
+            }
+
+        }
+
+        /// <summary>
+        /// returns bounding box of DXF file: [minX,minY, maxX,maxY]
         /// just a bound box of dxf file, no rotation
         /// </summary>
         /// <returns></returns>
@@ -65,7 +292,7 @@ namespace ZoomAndPanWPFDxf
             double currentHeightMain = this.ActualHeight;
             double currentWidthMain = this.ActualWidth;
 
-            boundBox = getActiveBoundBoxValues(); //include also rotation here
+            boundBox = getActiveBoundBoxValues(); //include also rotation. but hmmm
             double bboxWidthPrimal = Math.Abs(boundBox[0] - boundBox[2]);
             double bboxHeightPrimal = Math.Abs(boundBox[1] - boundBox[3]);
             double scaleX = currentWidthMain / bboxWidthPrimal;
@@ -74,13 +301,16 @@ namespace ZoomAndPanWPFDxf
             // adjust basic dimensions of canvas
             this.renderBaseDXF.Width = bboxWidthPrimal * usedScale;
             this.renderBaseDXF.Height = bboxHeightPrimal * usedScale;
+
+            this.renderOnlyDXF.Width = bboxWidthPrimal * usedScale;
+            this.renderOnlyDXF.Height = bboxHeightPrimal * usedScale;
             double usedScaleW = usedScale; double usedScaleH = usedScale;
             if (isMirrored)
             {
                 usedScaleW *= -1;
             }
-            double graphPlaneCenterX = this.renderBaseDXF.Width / 2;
-            double graphPlaneCenterY = this.renderBaseDXF.Height / 2;
+            double graphPlaneCenterX = this.renderOnlyDXF.Width / 2;
+            double graphPlaneCenterY = this.renderOnlyDXF.Height / 2;
             // now - conjure proper transformation sequence
             // first - move center to zero
             TranslateTransform translocateOperationCenterStart = new TranslateTransform(-(boundBox[2] - boundBox[0]) /2, -(boundBox[3] - boundBox[1]) /2);
@@ -95,7 +325,7 @@ namespace ZoomAndPanWPFDxf
             groupOperation.Children.Add(translocateOperationCenterStart);
             groupOperation.Children.Add(scaleOperation);
             groupOperation.Children.Add(translocateOperationCenter);
-
+            renderOnlyDXF.Children.Clear();
             foreach (DxfEntity entity in dxfFile.Entities)
             {
                 DxfColor entityColor = entity.Color;
@@ -115,9 +345,9 @@ namespace ZoomAndPanWPFDxf
                             lineGraphic.Y2 = lineDxf.P2.Y;
 
                             lineGraphic.Stroke = Brushes.Black;
-                            lineGraphic.StrokeThickness = 1 / usedScale;
+                            lineGraphic.StrokeThickness =  1 / usedScale;
                             lineGraphic.RenderTransform = groupOperation;
-                            this.renderBaseDXF.Children.Add(lineGraphic);
+                            this.renderOnlyDXF.Children.Add(lineGraphic);
                             break;
                         }
                     case DxfEntityType.Arc:
@@ -136,15 +366,88 @@ namespace ZoomAndPanWPFDxf
                             arcGraphic.Stroke = Brushes.Black;
                             arcGraphic.StrokeThickness = 1 / usedScale;
                             arcGraphic.RenderTransform = groupOperation;
-                            this.renderBaseDXF.Children.Add(arcGraphic);
+                            this.renderOnlyDXF.Children.Add(arcGraphic);
                             
                             break;
                         }
                 }
             }
 
+            /* ==== BOUNDARIES. NEED TO REMOVE! ==== */
+            Line lineGraphicB1 = new Line();
+            lineGraphicB1.X1 = 0;
+            lineGraphicB1.Y1 = 0;
+            lineGraphicB1.X2 = bboxWidthPrimal;
+            lineGraphicB1.Y2 = 0;
+            lineGraphicB1.Stroke = Brushes.Lime;
+            lineGraphicB1.RenderTransform = groupOperation;
+            lineGraphicB1.StrokeThickness = 1 / usedScale;
+
+            Line lineGraphicB2 = new Line();
+            lineGraphicB2.X1 = 0;
+            lineGraphicB2.Y1 = 0;
+            lineGraphicB2.X2 = 0;
+            lineGraphicB2.Y2 = bboxHeightPrimal;
+            lineGraphicB2.Stroke = Brushes.DarkBlue;
+            lineGraphicB2.RenderTransform = groupOperation;
+            lineGraphicB2.StrokeThickness = 1 / usedScale;
+            Line lineGraphicB3 = new Line();
+            lineGraphicB3.X1 = 0;
+            lineGraphicB3.Y1 = bboxHeightPrimal;
+            lineGraphicB3.X2 = bboxWidthPrimal;
+            lineGraphicB3.Y2 = bboxHeightPrimal;
+            lineGraphicB3.Stroke = Brushes.DarkGreen;
+            lineGraphicB3.RenderTransform = groupOperation;
+            lineGraphicB3.StrokeThickness = 1 / usedScale;
+            this.renderOnlyDXF.Children.Add(lineGraphicB3);
+            this.renderOnlyDXF.Children.Add(lineGraphicB2);
+            this.renderOnlyDXF.Children.Add(lineGraphicB1);
+
+            Line lineGraphicC2 = new Line();
+            lineGraphicC2.X1 = bboxWidthPrimal/2-5;
+            lineGraphicC2.Y1 = bboxHeightPrimal / 2;
+            lineGraphicC2.X2 = bboxWidthPrimal / 2 + 5;
+            lineGraphicC2.Y2 = bboxHeightPrimal/2;
+            lineGraphicC2.Stroke = Brushes.DarkBlue;
+            lineGraphicC2.RenderTransform = groupOperation;
+            lineGraphicC2.StrokeThickness = 1 / usedScale;
+
+            this.renderOnlyDXF.Children.Add(lineGraphicC2);
+
+            //okay, so we may assign rotation to renderOnlyDxfCanvas
+            // but at first we need to translate it to center of rotated bound box.... hmmm....
+            applyRotationToDXFcanvas(rotationAngleDegrees);
+
             return boundBox;
         }
+        
+        public void applyRotationToDXFcanvas(double in_angleDeg)
+        {
+            // usedscale should NEVER be adjusted here!
+            
+            List < Double> boundBoxRotated = getActiveBoundBoxValuesWithRotation(in_angleDeg);
+            double bboxWidthRotated = Math.Abs(boundBoxRotated[0] - boundBoxRotated[2]);
+            double bboxHeightRotated = Math.Abs(boundBoxRotated[1] - boundBoxRotated[3]);
+            double rotatedCenterX = bboxWidthRotated * usedScale / 2;
+            double rotatedCenterY = bboxHeightRotated * usedScale / 2;
+            List<Double> boundBoxPrimal = getActiveBoundBoxValues(); // not rotated, raw
+            double bboxWidthPrimal = Math.Abs(boundBoxPrimal[0] - boundBoxPrimal[2]);
+            double bboxHeightPrimal = Math.Abs(boundBoxPrimal[1] - boundBoxPrimal[3]);
+            double primalCenterX = bboxWidthPrimal * usedScale / 2;
+            double primalCenterY = bboxHeightPrimal * usedScale / 2;
+
+            // here I do align profile closely to boundaries [0;0]
+            double translateDirectionX = (boundBoxPrimal[0] - boundBoxRotated[0])*usedScale;
+            double translateDirectionY = (boundBoxPrimal[1] - boundBoxRotated[1])*usedScale;
+
+            TransformGroup dxfCanvasTransform = new TransformGroup();
+            dxfCanvasTransform.Children.Add(new RotateTransform(in_angleDeg, this.renderBaseDXF.Width / 2, this.renderBaseDXF.Height / 2));
+            dxfCanvasTransform.Children.Add(new TranslateTransform(translateDirectionX, translateDirectionY));
+            this.renderOnlyDXF.RenderTransform = dxfCanvasTransform;
+            this.renderBaseDXF.Width = bboxWidthRotated * usedScale;
+            this.renderBaseDXF.Height = bboxHeightRotated * usedScale;
+        }
+        
         #endregion
 
         #region SCROLLABLE LOGIC
@@ -275,13 +578,19 @@ namespace ZoomAndPanWPFDxf
         private void ZoomIn()
         {
             //zoomAndPanControl.ContentScale += 0.05;
-            zoomAndPanControl.ContentScale *= 1.25;
+            zoomAndPanControl.ContentScale *= 1.15;
 
             foreach (var itemChild in (this.renderBaseDXF).Children)
             {
                 if (itemChild is System.Windows.Shapes.Shape)
                 {
                     (itemChild as System.Windows.Shapes.Shape).StrokeThickness = 1 / this.zoomAndPanControl.ContentScale * 1/usedScale;
+                } else if (itemChild is Canvas)
+                {
+                    foreach (var itemChildInternal in (itemChild as Canvas).Children)
+                    {
+                        (itemChildInternal as System.Windows.Shapes.Shape).StrokeThickness = 1 / this.zoomAndPanControl.ContentScale * 1 / usedScale;
+                    }
                 }
             }
 
@@ -289,12 +598,19 @@ namespace ZoomAndPanWPFDxf
         private void ZoomOut()
         {
             //zoomAndPanControl.ContentScale -= 0.05;
-            zoomAndPanControl.ContentScale /= 1.25;
+            zoomAndPanControl.ContentScale /= 1.15;
             foreach (var itemChild in (this.renderBaseDXF).Children)
             {
                 if (itemChild is System.Windows.Shapes.Shape)
                 {
                     (itemChild as System.Windows.Shapes.Shape).StrokeThickness = 1 / this.zoomAndPanControl.ContentScale * 1/usedScale;
+                }
+                else if (itemChild is Canvas)
+                {
+                    foreach (var itemChildInternal in (itemChild as Canvas).Children)
+                    {
+                        (itemChildInternal as System.Windows.Shapes.Shape).StrokeThickness = 1 / this.zoomAndPanControl.ContentScale * 1 / usedScale;
+                    }
                 }
             }
         }
