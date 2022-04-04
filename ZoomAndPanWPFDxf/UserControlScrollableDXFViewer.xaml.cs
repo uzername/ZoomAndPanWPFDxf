@@ -305,10 +305,13 @@ namespace ZoomAndPanWPFDxf
             this.renderOnlyDXF.Width = bboxWidthPrimal * usedScale;
             this.renderOnlyDXF.Height = bboxHeightPrimal * usedScale;
             double usedScaleW = usedScale; double usedScaleH = usedScale;
+            // for some reason mirror works weird when applied here
+            /*
             if (isMirrored)
             {
                 usedScaleW *= -1;
             }
+            */
             double graphPlaneCenterX = this.renderOnlyDXF.Width / 2;
             double graphPlaneCenterY = this.renderOnlyDXF.Height / 2;
             // now - conjure proper transformation sequence
@@ -316,7 +319,7 @@ namespace ZoomAndPanWPFDxf
             TranslateTransform translocateOperationCenterStart = new TranslateTransform(-(boundBox[2] - boundBox[0]) /2, -(boundBox[3] - boundBox[1]) /2);
             // then - scale relatively to zero
             ScaleTransform scaleOperation = new ScaleTransform(usedScaleW, usedScaleH, 0, 0);
-            // also - rotate
+            // also - rotate. Rotate is performed on DXF Canvas!
 
             // next - move to center of screen
             TranslateTransform translocateOperationCenter = new TranslateTransform(graphPlaneCenterX, graphPlaneCenterY);
@@ -373,7 +376,8 @@ namespace ZoomAndPanWPFDxf
                 }
             }
 
-            /* ==== BOUNDARIES. NEED TO REMOVE! ==== */
+            /* ==== BOUNDARIES. USED FOR TESTING! ==== */
+            /*
             Line lineGraphicB1 = new Line();
             lineGraphicB1.X1 = 0;
             lineGraphicB1.Y1 = 0;
@@ -413,17 +417,17 @@ namespace ZoomAndPanWPFDxf
             lineGraphicC2.StrokeThickness = 1 / usedScale;
 
             this.renderOnlyDXF.Children.Add(lineGraphicC2);
-
+            */
             //okay, so we may assign rotation to renderOnlyDxfCanvas
             // but at first we need to translate it to center of rotated bound box.... hmmm....
-            applyRotationToDXFcanvas(rotationAngleDegrees);
+            applyRotationToDXFcanvas(rotationAngleDegrees, isMirrored);
 
             return boundBox;
         }
         
-        public void applyRotationToDXFcanvas(double in_angleDeg)
+        public void applyRotationToDXFcanvas(double in_angleDeg, bool in_Mirrored)
         {
-            // usedscale should NEVER be adjusted here!
+            // usedscale should NEVER be adjusted here! It was set up during the initial calculation of figure. Usedscale remains same for rotation angles
             
             List < Double> boundBoxRotated = getActiveBoundBoxValuesWithRotation(in_angleDeg);
             double bboxWidthRotated = Math.Abs(boundBoxRotated[0] - boundBoxRotated[2]);
@@ -440,9 +444,15 @@ namespace ZoomAndPanWPFDxf
             double translateDirectionX = (boundBoxPrimal[0] - boundBoxRotated[0])*usedScale;
             double translateDirectionY = (boundBoxPrimal[1] - boundBoxRotated[1])*usedScale;
 
-            TransformGroup dxfCanvasTransform = new TransformGroup();
+            TransformGroup dxfCanvasTransform = new TransformGroup();            
             dxfCanvasTransform.Children.Add(new RotateTransform(in_angleDeg, this.renderBaseDXF.Width / 2, this.renderBaseDXF.Height / 2));
             dxfCanvasTransform.Children.Add(new TranslateTransform(translateDirectionX, translateDirectionY));
+            if (in_Mirrored)
+            {
+                dxfCanvasTransform.Children.Add(new ScaleTransform(-1, 1));
+                // kostelyaka. According to stack overflow, transform is not required, but... I still have to use it
+                dxfCanvasTransform.Children.Add(new TranslateTransform(bboxWidthRotated*usedScale, 0));
+            }
             this.renderOnlyDXF.RenderTransform = dxfCanvasTransform;
             this.renderBaseDXF.Width = bboxWidthRotated * usedScale;
             this.renderBaseDXF.Height = bboxHeightRotated * usedScale;
